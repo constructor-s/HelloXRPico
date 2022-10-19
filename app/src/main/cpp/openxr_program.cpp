@@ -127,8 +127,9 @@ inline XrReferenceSpaceCreateInfo GetXrReferenceSpaceCreateInfo(const std::strin
 
 struct OpenXrProgram : IOpenXrProgram {
     OpenXrProgram(const std::shared_ptr<Options>& options, const std::shared_ptr<IPlatformPlugin>& platformPlugin,
-                  const std::shared_ptr<IGraphicsPlugin>& graphicsPlugin)
-        : m_options(options), m_platformPlugin(platformPlugin), m_graphicsPlugin(graphicsPlugin) {}
+                  const std::shared_ptr<IGraphicsPlugin>& graphicsPlugin,
+                  const std::shared_ptr<MyControllerHandler>& controllerPlugin)
+        : m_options(options), m_platformPlugin(platformPlugin), m_graphicsPlugin(graphicsPlugin), m_controllerPlugin(controllerPlugin) {}
 
     ~OpenXrProgram() override {
         if (m_input.actionSet != XR_NULL_HANDLE) {
@@ -1277,6 +1278,7 @@ struct OpenXrProgram : IOpenXrProgram {
             XrActionStateBoolean sideValue{XR_TYPE_ACTION_STATE_BOOLEAN};
             CHECK_XRCMD(xrGetActionStateBoolean(m_session, &getInfo, &sideValue));
             if ((sideValue.isActive == XR_TRUE) && (sideValue.changedSinceLastSync == XR_TRUE)) {
+                m_controllerPlugin->onActionStateBoolean(hand, getInfo.action, &sideValue);
                 if(sideValue.currentState == XR_TRUE)
                 {
                     Log::Write(Log::Level::Error,
@@ -1297,6 +1299,7 @@ struct OpenXrProgram : IOpenXrProgram {
             if (triggerValue.isActive == XR_TRUE){
                 float trigger = triggerValue.currentState;
                 if(trigger > 0.1f) {
+                    m_controllerPlugin->onActionStateFloat(hand, getInfo.action, &triggerValue);
                     //test controller Vibrate by  trigger key
                     pxr::Pxr_VibrateController(trigger, 20, hand);
                 }
@@ -1677,11 +1680,15 @@ struct OpenXrProgram : IOpenXrProgram {
 
     XrEventDataBuffer m_eventDataBuffer;
     InputState m_input;
+
+    // My own added plugin
+    std::shared_ptr<MyControllerHandler> m_controllerPlugin;
 };
 }  // namespace
 
 std::shared_ptr<IOpenXrProgram> CreateOpenXrProgram(const std::shared_ptr<Options>& options,
                                                     const std::shared_ptr<IPlatformPlugin>& platformPlugin,
-                                                    const std::shared_ptr<IGraphicsPlugin>& graphicsPlugin) {
-    return std::make_shared<OpenXrProgram>(options, platformPlugin, graphicsPlugin);
+                                                    const std::shared_ptr<IGraphicsPlugin>& graphicsPlugin,
+                                                    const std::shared_ptr<MyControllerHandler>& controllerPlugin) {
+    return std::make_shared<OpenXrProgram>(options, platformPlugin, graphicsPlugin, controllerPlugin);
 }

@@ -10,6 +10,7 @@
 #include "graphicsplugin.h"
 #include "openxr_program.h"
 #include "pController.h"
+#include "MyControllerHandler.h"
 
 namespace {
 
@@ -181,8 +182,8 @@ static int32_t onInputEvent(struct android_app* app, AInputEvent* event){
  */
 void android_main(struct android_app* app) {
     try {
-        JNIEnv* Env;
-        app->activity->vm->AttachCurrentThread(&Env, nullptr);
+        JNIEnv* env;
+        app->activity->vm->AttachCurrentThread(&env, nullptr);
 
         AndroidAppState appState = {};
 
@@ -206,9 +207,11 @@ void android_main(struct android_app* app) {
         std::shared_ptr<IPlatformPlugin> platformPlugin = CreatePlatformPlugin(options, data);
         // Create graphics API implementation.
         std::shared_ptr<IGraphicsPlugin> graphicsPlugin = CreateGraphicsPlugin(options, platformPlugin);
+        // Initialize my plugin to interface with Java
+        auto controllerHandler = std::make_shared<MyControllerHandler>(env, app->activity);
 
         // Initialize the OpenXR program.
-        std::shared_ptr<IOpenXrProgram> program = CreateOpenXrProgram(options, platformPlugin, graphicsPlugin);
+        std::shared_ptr<IOpenXrProgram> program = CreateOpenXrProgram(options, platformPlugin, graphicsPlugin, controllerHandler);
 
         // Initialize the loader for this platform
         PFN_xrInitializeLoaderKHR initializeLoader = nullptr;
