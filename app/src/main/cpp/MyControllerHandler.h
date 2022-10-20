@@ -17,6 +17,8 @@ public:
 private:
     JNIEnv *env;
     ANativeActivity *activity;
+    jmethodID onActionStateBooleanFromNativeMethodId;
+    jmethodID onActionStateFloatFromNativeMethodId;
 };
 
 

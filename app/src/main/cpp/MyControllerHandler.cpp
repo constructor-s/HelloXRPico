@@ -4,13 +4,16 @@
 
 #include "MyControllerHandler.h"
 
-MyControllerHandler::MyControllerHandler(JNIEnv * env, ANativeActivity * activity) : env(env), activity(activity) {
-
+MyControllerHandler::MyControllerHandler(JNIEnv * env, ANativeActivity * activity)
+    : env(env)
+    , activity(activity)
+    , onActionStateBooleanFromNativeMethodId(env->GetMethodID(env->GetObjectClass(activity->clazz), "onActionStateBooleanFromNative", "(JJJJJJ)V"))
+    , onActionStateFloatFromNativeMethodId(env->GetMethodID(env->GetObjectClass(activity->clazz), "onActionStateFloatFromNative", "(JJFJJJ)V")) {
 }
 
 void MyControllerHandler::onActionStateBoolean(int side, XrAction action, const XrActionStateBoolean *actionState) {
     auto obj = activity->clazz;
-    auto jmethodId = env->GetMethodID(env->GetObjectClass(obj), "onActionStateBooleanFromNative", "(JJJJJJ)V");
+    auto jmethodId = onActionStateBooleanFromNativeMethodId;
 
     jlong side_ = side;
     jlong action_ = reinterpret_cast<long>(action);
@@ -23,7 +26,7 @@ void MyControllerHandler::onActionStateBoolean(int side, XrAction action, const 
 
 void MyControllerHandler::onActionStateFloat(int side, XrAction action, const XrActionStateFloat *actionState) {
     auto obj = activity->clazz;
-    auto jmethodId = env->GetMethodID(env->GetObjectClass(obj), "onActionStateFloatFromNative", "(JJFJJJ)V");
+    auto jmethodId = onActionStateFloatFromNativeMethodId;
 
     jlong side_ = side;
     jlong action_ = reinterpret_cast<long>(action);
