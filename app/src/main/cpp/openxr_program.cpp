@@ -31,6 +31,7 @@ XrFrameEndInfoEXT   xrFrameEndInfoEXT;
 PFN_xrResetSensorPICO  pfnXrResetSensorPICO = nullptr;
 PFN_xrGetConfigPICO    pfnXrGetConfigPICO = nullptr;
 PFN_xrSetConfigPICO    pfnXrSetConfigPICO = nullptr;
+PFN_xrGetIPDPICO    pfnXrGetIPDPICO = nullptr;
 inline std::string GetXrVersionString(XrVersion ver) {
     return Fmt("%d.%d.%d", XR_VERSION_MAJOR(ver), XR_VERSION_MINOR(ver), XR_VERSION_PATCH(ver));
 }
@@ -238,6 +239,9 @@ struct OpenXrProgram : IOpenXrProgram {
         // Enable reset haed sensor extension
         extensions.push_back(XR_PICO_CONFIGS_EXT_EXTENSION_NAME);
         extensions.push_back(XR_PICO_RESET_SENSOR_EXTENSION_NAME);
+        // Enable IPD extension
+        extensions.push_back(XR_PICO_IPD_EXTENSION_NAME);
+
         XrInstanceCreateInfo createInfo{XR_TYPE_INSTANCE_CREATE_INFO};
         createInfo.next = m_platformPlugin->GetInstanceCreateExtension();
         createInfo.enabledExtensionCount = (uint32_t)extensions.size();
@@ -254,6 +258,12 @@ struct OpenXrProgram : IOpenXrProgram {
                               reinterpret_cast<PFN_xrVoidFunction *>(&pfnXrSetConfigPICO));
         xrGetInstanceProcAddr(m_instance,"xrResetSensorPICO",
                               reinterpret_cast<PFN_xrVoidFunction *>(&pfnXrResetSensorPICO));
+        xrGetInstanceProcAddr(m_instance,"xrGetIPDPICO",
+                              reinterpret_cast<PFN_xrVoidFunction *>(&pfnXrGetIPDPICO));
+        __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::CreateInstanceInternal", "pfnXrGetConfigPICO = %p", pfnXrGetConfigPICO);
+        __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::CreateInstanceInternal", "pfnXrSetConfigPICO = %p", pfnXrSetConfigPICO);
+        __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::CreateInstanceInternal", "pfnXrResetSensorPICO = %p", pfnXrResetSensorPICO);
+        __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::CreateInstanceInternal", "pfnXrGetIPDPICO = %p", pfnXrGetIPDPICO);
     }
 
     void CreateInstance() override {
@@ -893,18 +903,43 @@ struct OpenXrProgram : IOpenXrProgram {
     void CreateVisualizedSpaces() {
         CHECK(m_session != XR_NULL_HANDLE);
 
-        std::string visualizedSpaces[] = {"ViewFront",        "Local", "Stage", "StageLeft", "StageRight", "StageLeftRotated",
-                                          "StageRightRotated"};
-
-        for (const auto& visualizedSpace : visualizedSpaces) {
-            XrReferenceSpaceCreateInfo referenceSpaceCreateInfo = GetXrReferenceSpaceCreateInfo(visualizedSpace);
+//        std::string visualizedSpaces[] = {"ViewFront",        "Local", "Stage", "StageLeft", "StageRight", "StageLeftRotated",
+//                                          "StageRightRotated"};
+//
+//        for (const auto& visualizedSpace : visualizedSpaces) {
+//            XrReferenceSpaceCreateInfo referenceSpaceCreateInfo = GetXrReferenceSpaceCreateInfo(visualizedSpace);
+//            XrSpace space;
+//            XrResult res = xrCreateReferenceSpace(m_session, &referenceSpaceCreateInfo, &space);
+//            if (XR_SUCCEEDED(res)) {
+//                m_visualizedSpaces.push_back(space);
+//            } else {
+//                Log::Write(Log::Level::Warning,
+//                           Fmt("Failed to create reference space %s with error %d", visualizedSpace.c_str(), res));
+//            }
+//        }
+        {
+            XrReferenceSpaceCreateInfo referenceSpaceCreateInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+            referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::Identity();
+            // Render head-locked 1m in front of device.
+            referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::Translation({0.f, 0.f, -1.f});
+            referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
             XrSpace space;
             XrResult res = xrCreateReferenceSpace(m_session, &referenceSpaceCreateInfo, &space);
-            if (XR_SUCCEEDED(res)) {
+            m_visualizedSpaces.push_back(space);
+        }
+
+        std::array<float, 6> angles = {3.0f, 15.0f, 27.0f, 33.0f, 39.0f, 45.0f};
+        for (auto deg : angles) {
+            auto theta = deg / 180.0f * 3.14f;
+            for (auto phi = 0.0f; phi < 6.28f; phi += 6.28f / 36.0f) {
+                XrReferenceSpaceCreateInfo referenceSpaceCreateInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+                referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::Identity();
+                // Render head-locked 1m in front of device.
+                referenceSpaceCreateInfo.poseInReferenceSpace = Math::Pose::Translation({1.f * sin(theta) * cos(phi), 1.f * sin(theta) * sin(phi), -1.f * cos(theta)});
+                referenceSpaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+                XrSpace space;
+                XrResult res = xrCreateReferenceSpace(m_session, &referenceSpaceCreateInfo, &space);
                 m_visualizedSpaces.push_back(space);
-            } else {
-                Log::Write(Log::Level::Warning,
-                           Fmt("Failed to create reference space %s with error %d", visualizedSpace.c_str(), res));
             }
         }
     }
@@ -923,6 +958,13 @@ struct OpenXrProgram : IOpenXrProgram {
         }
         //set eye level
         pfnXrSetConfigPICO(m_session,TRACKING_ORIGIN,"0");
+
+        float ipdResult = 0.0;
+        pfnXrGetConfigPICO(m_session, PHYSICAL_IPD, &ipdResult);
+        __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::InitializeSession", "pfnXrGetConfigPICO(m_session, PHYSICAL_IPD, &ipdResult) -> %f", ipdResult);
+        pfnXrGetIPDPICO(m_session, &ipdResult);
+        __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::InitializeSession", "pfnXrGetIPDPICO(m_session, &ipdResult) -> %f", ipdResult);
+
         LogReferenceSpaces();
         InitializeActions();
         CreateVisualizedSpaces();
@@ -1058,6 +1100,7 @@ struct OpenXrProgram : IOpenXrProgram {
 
         // Process all pending messages.
         while (const XrEventDataBaseHeader* event = TryReadNextEvent()) {
+            __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::PollEvents", "event->type = %d", event->type);
             switch (event->type) {
                 case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING: {
                     const auto& instanceLossPending = *reinterpret_cast<const XrEventDataInstanceLossPending*>(event);
@@ -1077,12 +1120,22 @@ struct OpenXrProgram : IOpenXrProgram {
                             eventDataPerfSettingsEXT.controller,eventDataPerfSettingsEXT.status,eventDataPerfSettingsEXT.eventtype));
                     break;
                 }
-                case XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED:
+                case XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED: {
                     LogActionSourceName(m_input.grabAction, "Grab");
                     LogActionSourceName(m_input.quitAction, "Quit");
                     LogActionSourceName(m_input.poseAction, "Pose");
                     LogActionSourceName(m_input.vibrateAction, "Vibrate");
                     break;
+                }
+                case XR_TYPE_EVENT_HARDIPD_STATE_CHANGED: {
+                    __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::PollEvents", "XR_TYPE_EVENT_HARDIPD_STATE_CHANGED, ipd = %f", (reinterpret_cast<const XrEventDataHardIPDStateChanged *>(event))->ipd);
+                    float ipdResult = 0.0;
+                    pfnXrGetConfigPICO(m_session, PHYSICAL_IPD, &ipdResult);
+                    __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::PollEvents", "pfnXrGetConfigPICO(m_session, PHYSICAL_IPD, &ipdResult) -> %f", ipdResult);
+                    pfnXrGetIPDPICO(m_session, &ipdResult);
+                    __android_log_print(ANDROID_LOG_INFO, "OpenXrProgram::PollEvents", "pfnXrGetIPDPICO(m_session, &ipdResult) -> %f", ipdResult);
+                    break;
+                }
                 case XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING:
                 default: {
                     Log::Write(Log::Level::Verbose, Fmt("Ignoring event type %d", event->type));
@@ -1534,6 +1587,7 @@ struct OpenXrProgram : IOpenXrProgram {
         // For each locatable space that we want to visualize, render a 25cm cube.
         std::vector<Cube> cubes;
 
+        size_t i = 0;
 		for (XrSpace visualizedSpace : m_visualizedSpaces) {
             XrSpaceLocation spaceLocation{XR_TYPE_SPACE_LOCATION};
             res = xrLocateSpace(visualizedSpace, m_appSpace, predictedDisplayTime, &spaceLocation);
@@ -1541,7 +1595,11 @@ struct OpenXrProgram : IOpenXrProgram {
             if (XR_UNQUALIFIED_SUCCESS(res)) {
                 if ((spaceLocation.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
                     (spaceLocation.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0) {
-                    cubes.push_back(Cube{spaceLocation.pose, {0.25f, 0.25f, 0.25f}});
+//                    __android_log_print(ANDROID_LOG_VERBOSE, "OpenXrProgram::RenderLayer",
+//                                        "m_visualizedSpaces[%d]: spaceLocation.pose.orientation = {%f, %f, %f, %f}, spaceLocation.pose.position = {%f, %f, %f}", i++,
+//                                        spaceLocation.pose.orientation.x, spaceLocation.pose.orientation.y, spaceLocation.pose.orientation.z, spaceLocation.pose.orientation.w,
+//                                        spaceLocation.pose.position.x, spaceLocation.pose.position.y, spaceLocation.pose.position.z);
+                    cubes.push_back(Cube{spaceLocation.pose, {0.0025f, 0.0025f, 0.0025f}});
                 }
             } else {
                 Log::Write(Log::Level::Verbose, Fmt("Unable to locate a visualized reference space in app space: %d", res));
@@ -1634,6 +1692,19 @@ struct OpenXrProgram : IOpenXrProgram {
             projectionLayerViews[i].subImage.swapchain = viewSwapchain.handle;
             projectionLayerViews[i].subImage.imageRect.offset = {0, 0};
             projectionLayerViews[i].subImage.imageRect.extent = {viewSwapchain.width, viewSwapchain.height};
+
+
+            // The difference in position of the two views are always 64 mm, regardless of IPD...
+//            __android_log_print(ANDROID_LOG_VERBOSE, "OpenXrProgram::RenderLayer",
+//                                "projectionLayerViews[%d]: pose.orientation = {%f, %f, %f, %f}, pose.position = {%f, %f, %f}", i,
+//                                projectionLayerViews[i].pose.orientation.x, projectionLayerViews[i].pose.orientation.y, projectionLayerViews[i].pose.orientation.z, projectionLayerViews[i].pose.orientation.w,
+//                                projectionLayerViews[i].pose.position.x, projectionLayerViews[i].pose.position.y, projectionLayerViews[i].pose.position.z);
+//            __android_log_print(ANDROID_LOG_VERBOSE, "OpenXrProgram::RenderLayer",
+//                                "projectionLayerViews[%d]: fov = {%f, %f, %f, %f} (L,R,U,D)", i,
+//                                projectionLayerViews[i].fov.angleLeft, projectionLayerViews[i].fov.angleRight, projectionLayerViews[i].fov.angleUp, projectionLayerViews[i].fov.angleDown);
+//            __android_log_print(ANDROID_LOG_VERBOSE, "OpenXrProgram::RenderLayer",
+//                                "projectionLayerViews[%d]: viewSwapchain.width = %d, viewSwapchain.height = %d, swapchainImageIndex = %d", i,
+//                                viewSwapchain.width, viewSwapchain.height, swapchainImageIndex);
 
             /*Log::Write(Log::Level::Error,
                        Fmt("xrLocateView:view:[%d]:pos:%f,%f,%f:ori:%f,%f,%f,%f:fov:%f,%f,%f,%f:size:%d,%d,%d", i, m_views[i].pose.position.x, m_views[i].pose.position.y, m_views[i].pose.position.z,
